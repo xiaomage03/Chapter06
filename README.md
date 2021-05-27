@@ -54,9 +54,10 @@ ssize_t write_hook(int fd, const void *buf, size_t count) {
     return CALL_PREV(write_hook, fd, buf, count);
 }
 ```
-
+http://tinylab.org/linux-profiling-methods-overview
 这里我们可能要理解一下ftrace和atrace的机制，可以参考以下参考文章：
-
+https://www.gushiciku.cn/pl/py5G
+https://android.googlesource.com/platform/frameworks/base.git/+/android-4.2.2_r1/core/jni/android_os_Trace.cpp
 1. [使用 ftrace](https://source.android.com/devices/tech/debug/ftrace)
 2. [ftrace Documentation](https://www.kernel.org/doc/Documentation/trace/ftrace.txt)
 3. [ftrace 简介](https://www.ibm.com/developerworks/cn/linux/l-cn-ftrace/index.html)

@@ -5,7 +5,7 @@ import android.os.Trace;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-
+//https://juejin.cn/user/2832759143281048
 public final class Atrace {
     static {
         System.loadLibrary("tracehook");
@@ -24,12 +24,13 @@ public final class Atrace {
         return sHasHook;
     }
 
-
+   public static  void aSystraceStop(){
+        systraceStop();
+   }
     public static void enableSystrace() {
         if (!hasHacks()) {
             return;
         }
-
         enableSystraceNative();
 
         SystraceReflector.updateSystraceTags();
@@ -48,6 +49,7 @@ public final class Atrace {
     private static native void enableSystraceNative();
 
     private static native void restoreSystraceNative();
+    private static native void systraceStop();
 
     private static final class SystraceReflector {
         public static final void updateSystraceTags() {
@@ -56,12 +58,12 @@ public final class Atrace {
                     sTrace_sEnabledTags.set(null, sTrace_nativeGetEnabledTags.invoke(null));
                 } catch (IllegalAccessException e) {
                 } catch (InvocationTargetException e) {
-
                 }
             }
         }
-
+        // native层控制标签是否生效的方法
         private static final Method sTrace_nativeGetEnabledTags;
+        // java层控制标签是否生效
         private static final Field sTrace_sEnabledTags;
 
         static {

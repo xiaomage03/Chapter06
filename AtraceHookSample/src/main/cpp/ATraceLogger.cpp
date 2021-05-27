@@ -15,6 +15,7 @@
 #include <sys/system_properties.h>
 #include <vector>
 #include <syscall.h>
+#include <map>
 #include "linker.h"
 #include "hooks.h"
 
@@ -38,18 +39,55 @@ int64_t monotonicTime() {
     return static_cast<int64_t>(ts.tv_sec) * kSecondNanos + ts.tv_nsec;
 }
 
+typedef int64_t nsecs_t; // nano-seconds
+nsecs_t systemTime(){
+    struct timespec t;
+    t.tv_sec = t.tv_nsec = 0;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return nsecs_t(t.tv_sec)*1000000000LL + t.tv_nsec;
+}
+//获取线程的名称
+int fd = 0;
+std::map<int, std::string> mapThreadName;
+std::string getThreadName(int tid) {
+    std::map<int, std::string>::iterator iter;
+    iter = mapThreadName.find(tid);
+
+    if (iter != mapThreadName.end()) {
+        return iter->second;
+    } else {
+        char fname[128];
+        int len = sprintf(fname, "/proc/%d/task/%d/comm", getpid(), tid);
+        int cfd = open(fname, O_RDONLY);
+        if (cfd) {
+            char name[32];
+            int c = read(cfd, name,  32);
+            if (c > 0) {
+                mapThreadName[tid] = std::string(name, c - 1);
+                return mapThreadName[tid];
+            }
+        }
+    }
+    return std::to_string(tid);
+}
+
 void log_systrace(const void *buf, size_t count) {
     const char *msg = reinterpret_cast<const char *>(buf);
-
+    double f = double(systemTime()) / 1000000000;
     switch (msg[0]) {
 
         case 'B': { // begin synchronous event. format: "B|<pid>|<name>"
             ALOG("========= %s", msg);
+            char buf1[1024];
+            int len = snprintf(buf1, sizeof(buf1), "%s-%d [000] ...1 %.6f: tracing_mark_write: %s\n", getThreadName(gettid()).c_str(), gettid(), f, msg);
+            write(fd, buf1, len);
             break;
         }
         case 'E': { // end synchronous event. format: "E"
             ALOG("========= E");
-
+            char buf1[1024];
+            int len = snprintf(buf1, sizeof(buf1), "%s-%d [000] ...1 %.6f: tracing_mark_write: E\n", getThreadName(gettid()).c_str(), gettid(), f);
+            write(fd, buf1, len);
             break;
         }
             // the following events we don't currently log.
@@ -76,6 +114,9 @@ ssize_t write_hook(int fd, const void *buf, size_t count) {
         log_systrace(buf, count);
         return count;
     }
+    ALOG("=====##==== fd=%d",fd);
+    const char *msg = reinterpret_cast<const char *>(buf);
+    ALOG("=====##==== %s", msg);
     return CALL_PREV(write_hook, fd, buf, count);
 }
 
@@ -119,23 +160,23 @@ void installSystraceSnooper() {
             fd_sym = "_ZN7android6Tracer8sTraceFDE";
         }
 
+        //打开动态库
         void *handle;
         if (sdk < 21) {
             handle = dlopen(lib_name.c_str(), RTLD_LOCAL);
         } else {
+            //如果 filename 为 NULL，则返回的句柄用于主程序
             handle = dlopen(nullptr, RTLD_GLOBAL);
         }
-
-        atrace_enabled_tags =
-                reinterpret_cast<std::atomic<uint64_t> *>(
+        //获取 Trace类的atrace_enabled_tags属性地址
+        atrace_enabled_tags =reinterpret_cast<std::atomic<uint64_t> *>(
                         dlsym(handle, enabled_tags_sym.c_str()));
 
         if (atrace_enabled_tags == nullptr) {
             throw std::runtime_error("Enabled Tags not defined");
         }
-
-        atrace_marker_fd =
-                reinterpret_cast<int *>(dlsym(handle, fd_sym.c_str()));
+        //获取atrace_enabled_tags 的fd
+        atrace_marker_fd =reinterpret_cast<int *>(dlsym(handle, fd_sym.c_str()));
 
         if (atrace_marker_fd == nullptr) {
             throw std::runtime_error("Trace FD not defined");
@@ -216,5 +257,13 @@ extern "C"
 JNIEXPORT jboolean JNICALL
 Java_com_dodola_atrace_Atrace_installSystraceHook(JNIEnv *env, jclass type) {
     installSystraceHook();
+    fd = open("/mnt/sdcard/mytrace.txt", O_WRONLY | O_CREAT, 0666);
+    std::string head("TRACE:\n# tracer: nop\n#\n");
+    write(fd, head.c_str(), head.size());
     return static_cast<jboolean>(true);
+}
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_dodola_atrace_Atrace_systraceStop(JNIEnv *env, jclass clazz) {
+    close(fd);
 }
